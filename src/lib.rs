@@ -1,7 +1,10 @@
+use chrono::{DateTime, TimeZone, Utc};
+use glib::translate::FromGlibPtrFull;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_double, c_int};
 use std::path;
+use std::ptr;
 
 mod ffi;
 mod util;
@@ -105,6 +108,61 @@ impl PopplerDocument {
             ptr => Some(PopplerPage(ptr)),
         }
     }
+
+    pub fn get_creation_date(&self) -> DateTime<Utc> {
+        unsafe {
+            let timestamp = ffi::poppler_document_get_creation_date(self.0);
+            Utc.timestamp_opt(timestamp, 0).unwrap()
+        }
+    }
+
+    pub fn get_modification_date(&self) -> Option<DateTime<Utc>> {
+        unsafe {
+            let timestamp = ffi::poppler_document_get_modification_date(self.0);
+            if timestamp > 0 {
+                Some(Utc.timestamp_opt(timestamp, 0).unwrap())
+            } else {
+                None
+            }
+        }
+    }
+    pub fn set_creation_date(&self, creation_date: DateTime<Utc>) {
+        unsafe {
+            ffi::poppler_document_set_creation_date(self.0, creation_date.timestamp());
+        }
+    }
+    pub fn set_modification_date(&self, modification_date: DateTime<Utc>) {
+        unsafe {
+            ffi::poppler_document_set_modification_date(self.0, modification_date.timestamp());
+        }
+    }
+
+    pub fn clear_creation_date(&self) {
+        unsafe {
+            ffi::poppler_document_set_creation_date(self.0, 0);
+        }
+    }
+    pub fn clear_modification_date(&self) {
+        unsafe {
+            ffi::poppler_document_set_modification_date(self.0, 0);
+        }
+    }
+
+    pub fn save<P: AsRef<path::Path>>(&self, p: P) -> Result<(), glib::error::Error> {
+        let path_cstring = util::path_to_glib_url(p)?;
+        let uri = path_cstring.as_ptr();
+        let err = ptr::null_mut();
+        unsafe {
+            let return_value =
+                ffi::poppler_document_save(self.0, uri, err as *mut *mut glib::ffi::GError);
+
+            if return_value == 0 {
+                Err(glib::error::Error::from_glib_full(err))
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 impl PopplerPage {
@@ -148,7 +206,9 @@ mod tests {
     use cairo::Context;
     use cairo::Format;
     use cairo::ImageSurface;
+    use chrono::{TimeZone, Utc};
     use std::{fs::File, io::Read};
+    use tempfile::tempdir;
 
     #[test]
     fn test1() {
@@ -253,5 +313,67 @@ mod tests {
         let mut data = vec![];
 
         assert!(PopplerDocument::new_from_data(&mut data[..], "upw").is_err());
+    }
+
+    #[test]
+    fn test_get_time() {
+        let path = "test.pdf";
+        let doc: PopplerDocument = PopplerDocument::new_from_file(path, "upw").unwrap();
+        assert_eq!(
+            doc.get_creation_date().to_rfc3339(),
+            "2000-06-28T23:21:08+00:00"
+        );
+        assert_eq!(
+            doc.get_modification_date().unwrap().to_rfc3339(),
+            "2013-10-28T19:24:13+00:00"
+        );
+    }
+
+    #[test]
+    fn test_set_time() {
+        let path = "test.pdf";
+        let doc: PopplerDocument = PopplerDocument::new_from_file(path, "upw").unwrap();
+        let created = Utc.with_ymd_and_hms(2000, 1, 1, 12, 34, 56).unwrap();
+        let modified = Utc.with_ymd_and_hms(2023, 4, 5, 23, 59, 59).unwrap();
+
+        doc.set_creation_date(created);
+        doc.set_modification_date(modified);
+
+        let tempdir = tempdir().unwrap();
+        let path2 = tempdir.path().join("test2.pdf");
+        let tempfile = File::create(&path2).unwrap();
+
+        doc.save(&path2).unwrap();
+
+        let doc2: PopplerDocument = PopplerDocument::new_from_file(path2, "upw").unwrap();
+        assert_eq!(doc2.get_creation_date(), created);
+        assert_eq!(doc2.get_modification_date().unwrap(), modified);
+
+        drop(tempfile);
+        tempdir.close().unwrap();
+    }
+
+    #[test]
+    fn test_clear_time() {
+        let path = "test.pdf";
+        let doc: PopplerDocument = PopplerDocument::new_from_file(path, "upw").unwrap();
+
+        doc.clear_creation_date();
+        doc.clear_modification_date();
+
+        let tempdir = tempdir().unwrap();
+        let path2 = tempdir.path().join("test2.pdf");
+        let tempfile = File::create(&path2).unwrap();
+
+        doc.save(&path2).unwrap();
+
+        let doc2: PopplerDocument = PopplerDocument::new_from_file(path2, "upw").unwrap();
+        let epoch = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
+
+        assert_eq!(doc2.get_creation_date(), epoch);
+        assert!(doc2.get_modification_date().is_none());
+
+        drop(tempfile);
+        tempdir.close().unwrap();
     }
 }

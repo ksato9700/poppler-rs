@@ -1,3 +1,4 @@
+use libc::time_t;
 use std::os::raw::{c_char, c_double, c_int, c_uint};
 
 // FIXME: is this the correct way to get opaque types?
@@ -32,6 +33,19 @@ extern "C" {
     pub fn poppler_document_get_metadata(document: *mut PopplerDocument) -> *mut c_char;
     pub fn poppler_document_get_pdf_version_string(document: *mut PopplerDocument) -> *mut c_char;
     pub fn poppler_document_get_permissions(document: *mut PopplerDocument) -> c_uint;
+
+    pub fn poppler_document_get_creation_date(document: *mut PopplerDocument) -> time_t;
+    pub fn poppler_document_get_modification_date(document: *mut PopplerDocument) -> time_t;
+    pub fn poppler_document_set_creation_date(document: *mut PopplerDocument, creation_date: time_t);
+    pub fn poppler_document_set_modification_date(
+        document: *mut PopplerDocument,
+        modification_date: time_t,
+    );
+    pub fn poppler_document_save(
+        document: *mut PopplerDocument,
+        uri: *const c_char,
+        error: *mut *mut glib::ffi::GError,
+    ) -> c_int;
 
     pub fn poppler_page_get_size(
         page: *mut PopplerPage,
