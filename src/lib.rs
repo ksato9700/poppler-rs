@@ -109,10 +109,14 @@ impl PopplerDocument {
         }
     }
 
-    pub fn get_creation_date(&self) -> DateTime<Utc> {
+    pub fn get_creation_date(&self) -> Option<DateTime<Utc>> {
         unsafe {
             let timestamp = ffi::poppler_document_get_creation_date(self.0);
-            Utc.timestamp_opt(timestamp, 0).unwrap()
+            if timestamp > 0 {
+                Some(Utc.timestamp_opt(timestamp, 0).unwrap())
+            } else {
+                None
+            }
         }
     }
 
@@ -139,12 +143,12 @@ impl PopplerDocument {
 
     pub fn clear_creation_date(&self) {
         unsafe {
-            ffi::poppler_document_set_creation_date(self.0, 0);
+            ffi::poppler_document_set_creation_date(self.0, -1);
         }
     }
     pub fn clear_modification_date(&self) {
         unsafe {
-            ffi::poppler_document_set_modification_date(self.0, 0);
+            ffi::poppler_document_set_modification_date(self.0, -1);
         }
     }
 
@@ -320,7 +324,7 @@ mod tests {
         let path = "test.pdf";
         let doc: PopplerDocument = PopplerDocument::new_from_file(path, "upw").unwrap();
         assert_eq!(
-            doc.get_creation_date().to_rfc3339(),
+            doc.get_creation_date().unwrap().to_rfc3339(),
             "2000-06-28T23:21:08+00:00"
         );
         assert_eq!(
@@ -346,7 +350,7 @@ mod tests {
         doc.save(&path2).unwrap();
 
         let doc2: PopplerDocument = PopplerDocument::new_from_file(path2, "upw").unwrap();
-        assert_eq!(doc2.get_creation_date(), created);
+        assert_eq!(doc2.get_creation_date().unwrap(), created);
         assert_eq!(doc2.get_modification_date().unwrap(), modified);
 
         drop(tempfile);
@@ -368,9 +372,8 @@ mod tests {
         doc.save(&path2).unwrap();
 
         let doc2: PopplerDocument = PopplerDocument::new_from_file(path2, "upw").unwrap();
-        let epoch = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
 
-        assert_eq!(doc2.get_creation_date(), epoch);
+        assert!(doc2.get_creation_date().is_none());
         assert!(doc2.get_modification_date().is_none());
 
         drop(tempfile);
